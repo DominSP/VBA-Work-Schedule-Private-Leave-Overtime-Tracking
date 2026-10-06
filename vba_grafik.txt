@@ -1,0 +1,131 @@
+Option Explicit
+
+Public Function GetTimeDifference(ByVal textValue As String) As Variant
+    On Error GoTo CleanFail
+    
+    textValue = Trim(textValue)
+    
+    Dim splitTime() As String
+    Dim startTime As Date
+    Dim endTime As Date
+    Dim durationMinutes As Long
+    
+    splitTime = Split(textValue, "-")
+    
+    startTime = TimeValue(Trim(splitTime(0)))
+    endTime = TimeValue(Trim(splitTime(1)))
+    
+    durationMinutes = DateDiff("n", startTime, endTime)
+    GetTimeDifference = durationMinutes / 1440
+    
+    Exit Function
+    
+'Obsluguje czesto wystepujace bledy
+CleanFail:
+    
+    'przypadek dwa wyjscia prywatne/odpracowania w ciagu dnia
+    If InStr(textValue, ",") > 0 Or InStr(textValue, "/") > 0 Then
+        Dim intervals() As String
+        
+        If InStr(textValue, ",") > 0 Then
+            intervals = Split(textValue, ",")
+        Else
+            intervals = Split(textValue, "/")
+        End If
+        
+        Dim part1 As Variant
+        Dim part2 As Variant
+        
+        ' Wywolujemy funkcje GetTimeDifference jeszcze raz dla rozdzielonych czesci
+        part1 = GetTimeDifference(intervals(0))
+        part2 = GetTimeDifference(intervals(1))
+        
+        ' Jesli któras czesc zwrócila blad, cala funkcja zwraca blad
+        If IsError(part1) Or IsError(part2) Then
+            GetTimeDifference = CVErr(xlErrValue)
+        Else
+            GetTimeDifference = part1 + part2
+        End If
+        
+        Exit Function
+        
+    'blad typu 16:00:16:45 zamiast 16:00-16:45
+    ElseIf UBound(Split(textValue, ":")) = 3 Then
+        Dim secondColonPosition As Long
+        secondColonPosition = InStr(InStr(1, textValue, ":") + 1, textValue, ":")
+        
+        Dim repairedText As String
+        repairedText = Left(textValue, secondColonPosition - 1) & "-" & Mid(textValue, secondColonPosition + 1)
+        
+        ' Wywolujemy funkcje ponownie, ale juz dla naprawionego tekstu
+        GetTimeDifference = GetTimeDifference(repairedText)
+        Exit Function
+        
+    Else
+        GetTimeDifference = CVErr(xlErrValue)
+        Exit Function
+        
+    End If
+    
+End Function
+
+Sub CheckOutingsHoursForEachWorker()
+    Dim ws As Worksheet
+    Set ws = ActiveSheet
+
+    Dim col As Long
+    col = 7
+    
+    Dim row As Long
+    Dim lastRow As Long
+      
+    row = 3
+    lastRow = ws.Range("A7").End(xlDown).row
+    
+    Dim targetRange As Range
+    Application.ScreenUpdating = False
+    
+    Do
+        'Dodaje dwie kolumny
+        Columns(col).Insert
+        Columns(col).Insert
+        
+        'formatowanie kolumn
+        Set targetRange = ws.Range(ws.Cells(3, col), ws.Cells(lastRow, col + 1))
+        With targetRange.Borders
+            .LineStyle = xlContinuous
+            .Weight = xlThin
+            .Color = vbBlack
+        End With
+        targetRange.BorderAround LineStyle:=xlContinuous, Weight:=xlMedium, Color:=vbBlack
+        
+        ws.Cells(2, col).Value = "WP hours"
+        ws.Cells(2, col + 1).Value = "OWP hours"
+        
+        'Zlicza godziny wyjsc prywatnych i odpracowan
+        For row = 3 To lastRow
+        
+            If Not IsEmpty(ws.Cells(row, col - 2)) Then
+                ws.Cells(row, col) = GetTimeDifference(ws.Cells(row, col - 2).Value)
+                ws.Cells(row, col).NumberFormat = "[h]:mm"
+            End If
+            
+            If Not IsEmpty(ws.Cells(row, col - 1)) Then
+                ws.Cells(row, col + 1) = GetTimeDifference(ws.Cells(row, col - 1).Value)
+                ws.Cells(row, col + 1).NumberFormat = "[h]:mm"
+            End If
+        
+        Next row
+        
+        'Warunek wyjscia z petli
+        If ws.Cells(1, col + 2).Value = "" Then
+            Exit Do
+        End If
+        
+        col = col + 6
+    Loop
+    
+    Application.ScreenUpdating = True
+End Sub
+
+
